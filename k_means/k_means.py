@@ -160,12 +160,13 @@ import pandas as pd
 
 class KMeans:
     
-    def __init__(self, K=8, max_iter=300, random_state=None):
+    def __init__(self, K=8, max_iter=300, number_of_fits=1, random_state=None):
         # NOTE: Feel free add any hyperparameters 
         # (with defaults) as you see fit
         self.K = K
         self.max_iter=300
         self.random_state = random_state
+        self.number_of_fits = number_of_fits
         
     def fit(self, X):
         """
@@ -181,27 +182,55 @@ class KMeans:
 
         X = (X - self.means) / self.stds
 
-        self.centroids = self.init_centroids(X)
-        self.clusters = np.zeros(X.shape[0], dtype=int)
+        # self.centroids = self.init_centroids(X)
+        # self.clusters = np.zeros(X.shape[0], dtype=int)
+
+        # for _ in range(self.max_iter):
+        #     for i, row in X.iterrows():
+        #         self.clusters[i] = self.find_nearest_cluster(row.values)
+
+        #     # Update centroids
+        #     new_centroids = np.array([
+        #         X.iloc[np.where(self.clusters == j)[0]].mean().to_numpy()
+        #         for j in range(self.K)
+        #     ])
+
+        #     # Check convergence
+        #     if np.allclose(self.centroids, new_centroids):
+        #         break
+
+        #     self.centroids = new_centroids
+
+        fits = [self.single_fit(X) for _ in range(self.number_of_fits)]
+        # for fit in fits:
+        index = np.argmax([euclidean_silhouette(X, fits[i][1]) for i in range(self.number_of_fits)])
+        self.centroids, self.clusters = fits[index][0], fits[index][1]
+    
+    def single_fit(self, X):
+        centroids = self.init_centroids(X)
+        clusters = np.zeros(X.shape[0], dtype=int)
 
         for _ in range(self.max_iter):
             for i, row in X.iterrows():
-                self.clusters[i] = self.find_nearest_cluster(row.values)
+                clusters[i] = self.find_nearest_cluster(row.values, centroids)
 
             # Update centroids
             new_centroids = np.array([
-                X.iloc[np.where(self.clusters == j)[0]].mean().to_numpy()
+                X.iloc[np.where(clusters == j)[0]].mean().to_numpy()
                 for j in range(self.K)
             ])
 
             # Check convergence
-            if np.allclose(self.centroids, new_centroids):
+            if np.allclose(centroids, new_centroids):
                 break
 
-            self.centroids = new_centroids
+            centroids = new_centroids
 
-    def find_nearest_cluster(self, values):
-        return np.argmin([euclidean_distance(values, self.centroids[j]) for j in range(self.K)])
+        return [centroids, clusters]
+
+
+    def find_nearest_cluster(self, values, centroids):
+        return np.argmin([euclidean_distance(values, centroids[j]) for j in range(self.K)])
     
     def init_centroids(self, X):
         centroids = [X.iloc[np.random.randint(len(X))]]
@@ -247,7 +276,7 @@ class KMeans:
         X = (X - self.means) / self.stds
         clusters = np.zeros(X.shape[0], dtype=int)
         for i, row in X.iterrows():
-            clusters[i] = self.find_nearest_cluster(row.values)
+            clusters[i] = self.find_nearest_cluster(row.values, self.centroids)
         return clusters
     
     def get_centroids(self):
@@ -314,10 +343,16 @@ def euclidean_distortion(X, z):
     
     distortion = 0.0
     clusters = np.unique(z)
+    # for i, c in enumerate(clusters):
+    #     Xc = X[z == c]
+    #     mu = Xc.mean(axis=0)
+    #     distortion += ((Xc - mu) ** 2).sum(axis=1)
+
     for i, c in enumerate(clusters):
         Xc = X[z == c]
         mu = Xc.mean(axis=0)
-        distortion += ((Xc - mu) ** 2).sum(axis=1)
+        mu_arr = np.array([mu for _ in range(len(Xc))])
+        distortion += np.sum(((Xc - mu_arr) ** 2))
         
     return distortion
 
