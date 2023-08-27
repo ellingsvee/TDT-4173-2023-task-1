@@ -1,5 +1,7 @@
 import numpy as np 
 import pandas as pd 
+
+
 # IMPORTANT: DO NOT USE ANY OTHER 3RD PARTY PACKAGES
 # (math, random, collections, functools, etc. are perfectly fine)
 
@@ -154,15 +156,16 @@ import pandas as pd
 #     b = (D + inf_mask).min(axis=1)
     
 #     return np.mean((b - a) / np.maximum(a, b))
+
+
 class KMeans:
     
     def __init__(self, K=8, max_iter=300, random_state=None):
         # NOTE: Feel free add any hyperparameters 
         # (with defaults) as you see fit
         self.K = K
-        self.max_iter = max_iter
+        self.max_iter=300
         self.random_state = random_state
-        
         
     def fit(self, X):
         """
@@ -172,15 +175,58 @@ class KMeans:
             X (array<m,n>): a matrix of floats with
                 m rows (#samples) and n columns (#features)
         """
-        np.random.seed(self.random_state)
-        
-        # Initialize centroids by randomly selecting data points
-        indices = np.random.choice(X.shape[0], size=self.K, replace=False)
-        self.centroids = X.loc[indices].to_numpy()
+        # Normalize the data
+        self.means = X.mean(axis=0)
+        self.stds = X.std(axis=0)
 
+        X = (X - self.means) / self.stds
+
+        self.centroids = self.init_centroids(X)
         self.clusters = np.zeros(X.shape[0], dtype=int)
 
+        for _ in range(self.max_iter):
+            for i, row in X.iterrows():
+                self.clusters[i] = self.find_nearest_cluster(row.values)
 
+            # Update centroids
+            new_centroids = np.array([
+                X.iloc[np.where(self.clusters == j)[0]].mean().to_numpy()
+                for j in range(self.K)
+            ])
+
+            # Check convergence
+            if np.allclose(self.centroids, new_centroids):
+                break
+
+            self.centroids = new_centroids
+
+    def find_nearest_cluster(self, values):
+        return np.argmin([euclidean_distance(values, self.centroids[j]) for j in range(self.K)])
+    
+    def init_centroids(self, X):
+        centroids = [X.iloc[np.random.randint(len(X))]]
+
+        # Initialize the list of squared distances for each data point to its closest centroid
+        distances_to_closest_centroid = [euclidean_distance(x, centroids[0])**2 for x in X.values]
+
+        # Loop to select the remaining centroids
+        for i in range(1, self.K):
+            # Calculate the cumulative probabilities for the next centroid selection
+            cum_probabilities = np.cumsum(distances_to_closest_centroid) / np.sum(distances_to_closest_centroid)
+
+            # Generate a random number
+            rand_value = np.random.rand()
+
+            # Find the index of the data point corresponding to the next centroid
+            new_centroid_index = np.argmax(cum_probabilities >= rand_value)
+
+            # Add the selected centroid to the centroids list
+            centroids.append(list(X.iloc[new_centroid_index]))
+
+            # Update the squared distances for the newly selected centroid
+            new_distances = [euclidean_distance(x, centroids[-1])**2 for x in X.values]
+            distances_to_closest_centroid = np.minimum(distances_to_closest_centroid, new_distances)
+        return np.array(centroids)
 
     def predict(self, X):
         """
@@ -198,22 +244,11 @@ class KMeans:
             there are 3 clusters, then a possible assignment
             could be: array([2, 0, 0, 1, 2, 1, 1, 0, 2, 2])
         """
-        for _ in range(self.max_iter):
-            # Assign each point to the nearest centroid
-            for i, row in X.iterrows():
-                distances = [euclidean_distance(row.values, self.centroids[j]) for j in range(self.K)]
-                self.clusters[i] = np.argmin(distances).astype(int)
-                
-            new_centroids = np.zeros_like(self.centroids)
-            for j in range(self.K):
-                new_centroids[j] = np.mean(X.iloc[[self.clusters[i] == j for i in range(len(self.clusters))]], axis=0).to_numpy()
-            
-            # Check convergence
-            if np.allclose(self.centroids, new_centroids):
-                break
-            self.centroids = new_centroids
-
-        return self.clusters
+        X = (X - self.means) / self.stds
+        clusters = np.zeros(X.shape[0], dtype=int)
+        for i, row in X.iterrows():
+            clusters[i] = self.find_nearest_cluster(row.values)
+        return clusters
     
     def get_centroids(self):
         """
@@ -230,10 +265,8 @@ class KMeans:
             [xm_1, xm_2, ..., xm_n]
         ])
         """
-        return self.centroids
-    
-    
-    
+        return np.array([(self.centroids[i] * self.stds) + self.means for i in range(len(self.centroids))])
+
 # --- Some utility functions 
 
 def euclidean_distance(x, y):
@@ -281,14 +314,11 @@ def euclidean_distortion(X, z):
     
     distortion = 0.0
     clusters = np.unique(z)
-
     for i, c in enumerate(clusters):
         Xc = X[z == c]
         mu = Xc.mean(axis=0)
-        mu_arr = np.array([mu for _ in range(len(Xc))])
+        distortion += ((Xc - mu) ** 2).sum(axis=1)
         
-        distortion += np.sum(((Xc - mu_arr) ** 2))
-        # distortion += ((Xc - mu) ** 2).sum(axis=1)
     return distortion
 
 
@@ -308,7 +338,6 @@ def euclidean_silhouette(X, z):
         A scalar float with the silhouette score
     """
     X, z = np.asarray(X), np.asarray(z)
-
     assert len(X.shape) == 2
     assert len(z.shape) == 1
     assert X.shape[0] == z.shape[0]
@@ -331,5 +360,3 @@ def euclidean_silhouette(X, z):
     b = (D + inf_mask).min(axis=1)
     
     return np.mean((b - a) / np.maximum(a, b))
-
-
