@@ -114,21 +114,6 @@ import pandas as pd
 #     def add_child(self, child_node):
 #         self.children.append(child_node)
 
-class TreeNode:
-    def __init__(self, label=None, value=None):
-        self.label = label
-        self.value = value
-        self.children = []
-    def add_child(self, label=None, value=None):
-        print("Ok so far")
-        new_node = TreeNode(label=label, value=value)
-        self.children.append(new_node)
-    def add_label(self, label):
-        self.label = label
-    def add_value(self, value):
-        self.value = value
-    def retrieve_children(self):
-        return self.children
 
 class DecisionTree:
     
@@ -147,6 +132,49 @@ class DecisionTree:
         """
         self.tree = self.build_tree(X, y)
     
+    def build_tree(self, X, y):
+        unique_y_vals = y['Play Tennis'].unique() # A bit unsure if this works
+        if len(unique_y_vals) == 1:
+            # If all examples are positive
+            if unique_y_vals[0] == 'Yes':
+                # Return the single-node tree Root with label +
+                return ['Yes']
+            # If all examples are negative
+            if unique_y_vals[0] == 'No':
+                # Return the single-node tree Root with label -
+                return ['No']
+        # If Attributes is empty
+        if X.empty:
+            return [self.most_common_value(y)]
+        
+        # Otherwise begin
+        attr = self.find_best_attribute(X, y) # Finds attribute that best 
+        for val in X[attr]:
+            X_sliced = X[X[attr] == val]
+            if X_sliced.empty:
+                # Below the new branch add a leaf node with label = most common value of Target_attribute in Examples
+                ...
+            else:
+                # Recursion
+                ...
+
+
+    def most_common_value(self, y):
+        unique_labels, counts = np.unique(y, return_counts=True)
+        most_common_index = np.argmax(counts)
+        return unique_labels[most_common_index]    
+
+    def find_best_attribute(self, X, y):
+        tot_entropy = entropy(y.value_counts())
+        gains = {}
+        for attribute in X.columns:
+            gains[attribute] = self.gain(X, y, attribute, tot_entropy)
+        return max(gains, key=lambda k: gains[k])
+
+    def gain(self, X, y, attribute, tot_entropy):
+        values = X[attribute].unique()
+        return tot_entropy - np.sum([(len(y[X[attribute] == value])/len(y))*entropy(y[X[attribute] == value].value_counts()) for value in values])
+
     def predict(self, X):
         """
         Generates predictions
@@ -185,49 +213,9 @@ class DecisionTree:
         # TODO: Implement
         raise NotImplementedError()
 
-    def build_tree(self, X, y):
-        if len(np.unique(y)) == 1:
-            return TreeNode(label=y.iloc[0])
-
-        if len(X.columns) == 0:
-            most_common_label = self.most_common_value(y)
-            return TreeNode(label=most_common_label)
-        
-        root = TreeNode()
-        attr = self.find_best_attribute(X, y)
-
-        print(f"attr = {attr}")
-
-        values = X[attr].unique()
-        print(f"values = {values}")
-        for value in values:
-            if X[X[attr] == value].empty:
-                root.add_child(label=self.most_common_value(y), value=value)
-            else:
-
-                print(f"y[y != attr] = {y[y != attr]}")
-                print(f"X[X[attr] == value] = {X[X[attr] == value]}")
-                root.add_child(label=self.build_tree(X[X[attr] == value], y[y != attr]))
 
 
 
-    def most_common_value(self, y):
-        unique_labels, counts = np.unique(y, return_counts=True)
-        most_common_index = np.argmax(counts)
-        return unique_labels[most_common_index]    
-
-    def find_best_attribute(self, X, y):
-        tot_entropy = entropy(y.value_counts())
-        gains = {}
-        for attribute in X.columns:
-            gains[attribute] = self.gain(X, y, attribute, tot_entropy)
-
-        print(f"gains = {gains}")
-        return max(gains, key=lambda k: gains[k])
-
-    def gain(self, X, y, attribute, tot_entropy):
-        values = X[attribute].unique()
-        return tot_entropy - np.sum([(len(y[X[attribute] == value])/len(y))*entropy(y[X[attribute] == value].value_counts()) for value in values])
 
         
 
