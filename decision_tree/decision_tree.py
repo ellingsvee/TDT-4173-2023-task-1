@@ -196,11 +196,34 @@ class DecisionTree:
         return np.array([self.predict_sample(row.to_dict(), tree) for _, row in X.iterrows()])
 
     def predict_sample(self, sample, tree):
+        # for conditions, label in tree:
+        #     conditions_satisfied = all(sample[attr] == val for attr, val in conditions)
+        #     if conditions_satisfied == True:
+        #         return label
+        # # If no "direct" path was found, remove one of the rules and base the prediction on that
+        
+        rules = []
         for conditions, label in tree:
             conditions_satisfied = all(sample[attr] == val for attr, val in conditions)
             if conditions_satisfied == True:
                 return label
-        return random.choice(self.booleans)
+            
+            rules.append([[sample[attr] == val for attr, val in conditions], label, conditions]) # If no perfect fit was found
+        
+        return self.find_most_similar(rules) # If no perfect fit was founc
+
+    def find_most_similar(self, rules):
+        # If no "direct" path was found, find the other rule that if the most "similar" to the sample we want to predict.
+        max_true_count = 0
+        best_index = -1
+        for i, rule in enumerate(rules):
+            lst = rule[0]
+            true_count = lst.count(True)
+
+            if true_count > max_true_count:
+                max_true_count = true_count
+                best_index = i
+        return rules[best_index][1]
 
     def get_rules(self):
         """
@@ -239,7 +262,7 @@ class DecisionTree:
                 pruned_subtree = pruned_tree[:i] + pruned_tree[i+1:]
                 accuracy_without_subtree = accuracy(y, self.predict(X, pruned_subtree))
 
-                if accuracy_without_subtree >= best_accuracy:
+                if accuracy_without_subtree > best_accuracy:
                     best_accuracy = accuracy_without_subtree
                     pruned_tree = pruned_subtree
         
