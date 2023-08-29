@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd 
 # IMPORTANT: DO NOT USE ANY OTHER 3RD PARTY PACKAGES
 # (math, random, collections, functools, etc. are perfectly fine)
-
+import random
+from icecream import ic # Remove 
 
 # class DecisionTree:
     
@@ -117,8 +118,9 @@ import pandas as pd
 
 class DecisionTree:
     
-    def __init__(self):
+    def __init__(self, target_attribute = 'Play Tennis'):
         self.tree = None
+        self.target_attribute = target_attribute
 
     def fit(self, X, y):
         """
@@ -130,44 +132,43 @@ class DecisionTree:
                 to the features.
             y (pd.Series): a vector of discrete ground-truth labels
         """
-        self.tree = self.build_tree(X, y)
-    
-    def build_tree(self, X, y):
-        unique_y_vals = y['Play Tennis'].unique() # A bit unsure if this works
-        if len(unique_y_vals) == 1:
-            # If all examples are positive
-            if unique_y_vals[0] == 'Yes':
-                # Return the single-node tree Root with label +
-                return ['Yes']
-            # If all examples are negative
-            if unique_y_vals[0] == 'No':
-                # Return the single-node tree Root with label -
-                return ['No']
-        # If Attributes is empty
-        if X.empty:
-            return [self.most_common_value(y)]
-        
-        # Otherwise begin
-        attr = self.find_best_attribute(X, y) # Finds attribute that best 
-        for val in X[attr]:
-            X_sliced = X[X[attr] == val]
-            if X_sliced.empty:
-                # Below the new branch add a leaf node with label = most common value of Target_attribute in Examples
-                ...
-            else:
-                # Recursion
-                ...
+        self.booleans = y.unique().tolist()
+        self.tree = self.build_tree(X, y, X.columns.tolist())
 
+    def build_tree(self, X, y, attributes):
+        root = []
+
+        unique_y_vals = y.unique()
+        if len(unique_y_vals) == 1:
+            if unique_y_vals[0] in self.booleans:
+                root.append(([], unique_y_vals[0]))
+            return root
+
+        if len(attributes) == 0:
+            most_common = self.most_common_value(y)
+            root.append(([], most_common))
+            return root
+
+        attr = self.find_best_attribute(X, y, attributes)
+        for val in X[attr].unique().tolist():
+            condition_mask = X[attr] == val
+            if X[condition_mask].empty:
+                leaf_label = self.most_common_value(y)
+                root.append(([(attr, val)], leaf_label))
+            else:
+                new_attributes = np.delete(attributes, np.argwhere(attributes == attr))
+                sub_tree = self.build_tree(X[condition_mask], y[condition_mask], new_attributes)
+                for sub_case in sub_tree:
+                    root.append(([(attr, val)] + sub_case[0], sub_case[1]))
+        return root
 
     def most_common_value(self, y):
-        unique_labels, counts = np.unique(y, return_counts=True)
-        most_common_index = np.argmax(counts)
-        return unique_labels[most_common_index]    
+        return y.value_counts().idxmax() 
 
-    def find_best_attribute(self, X, y):
+    def find_best_attribute(self, X, y, attributes):
         tot_entropy = entropy(y.value_counts())
         gains = {}
-        for attribute in X.columns:
+        for attribute in attributes:
             gains[attribute] = self.gain(X, y, attribute, tot_entropy)
         return max(gains, key=lambda k: gains[k])
 
@@ -175,7 +176,8 @@ class DecisionTree:
         values = X[attribute].unique()
         return tot_entropy - np.sum([(len(y[X[attribute] == value])/len(y))*entropy(y[X[attribute] == value].value_counts()) for value in values])
 
-    def predict(self, X):
+
+    def predict(self, X, tree=None):
         """
         Generates predictions
         
@@ -189,9 +191,17 @@ class DecisionTree:
         Returns:
             A length m vector with predictions
         """
-        # TODO: Implement 
-        raise NotImplementedError()
-    
+        if tree == None:
+            tree = self.tree
+        return np.array([self.predict_sample(row.to_dict(), tree) for _, row in X.iterrows()])
+
+    def predict_sample(self, sample, tree):
+        for conditions, label in tree:
+            conditions_satisfied = all(sample[attr] == val for attr, val in conditions)
+            if conditions_satisfied == True:
+                return label
+        return random.choice(self.booleans)
+
     def get_rules(self):
         """
         Returns the decision tree as a list of rules
@@ -210,14 +220,31 @@ class DecisionTree:
             ...
         ]
         """
-        # TODO: Implement
-        raise NotImplementedError()
-
-
-
-
-
+        return self.tree
+    
+    def prune_tree(self, X, y):
+        """
+        Prunes the decision tree using the MDL criterion
         
+        Args:
+            X (pd.DataFrame): Validation dataset features
+            y (pd.Series): Validation dataset labels
+        """
+        best_accuracy = accuracy(y, self.predict(X, self.tree))
+        pruned_tree = self.tree
+
+        for i, (conditions, label) in enumerate(self.tree):
+            if conditions:
+                # Temporarily remove the subtree rooted at this node
+                pruned_subtree = pruned_tree[:i] + pruned_tree[i+1:]
+                accuracy_without_subtree = accuracy(y, self.predict(X, pruned_subtree))
+
+                if accuracy_without_subtree >= best_accuracy:
+                    best_accuracy = accuracy_without_subtree
+                    pruned_tree = pruned_subtree
+        
+        print(f"Performed tree pruning: {len(self.tree) - len(pruned_tree)} rule(s) removed.")
+        self.tree = pruned_tree
 
 # --- Some utility functions 
     
@@ -260,3 +287,47 @@ def entropy(counts):
 
 
 
+# Testing
+# data_1 = pd.read_csv('decision_tree/data_1.csv')
+# data_1
+
+# Separate independent (X) and dependent (y) variables
+# X = data_1.drop(columns=['Play Tennis'])
+# y = data_1['Play Tennis']
+
+# # Create and fit a Decrision Tree classifier
+# model_1 = DecisionTree('Play Tennis')  # <-- Should work with default constructor
+# model_1.fit(X, y)
+
+# # Verify that it perfectly fits the training set
+# print(f'Accuracy: {accuracy(y_true=y, y_pred=model_1.predict(X)) * 100 :.1f}%')
+
+# for rules, label in model_1.get_rules():
+#     conjunction = ' ∩ '.join(f'{attr}={value}' for attr, value in rules)
+#     print(f'{"✅" if label == "Yes" else "❌"} {conjunction} => {label}')
+
+# data_2 = pd.read_csv('decision_tree/data_2.csv')
+
+# data_2_train = data_2.query('Split == "train"')
+# data_2_valid = data_2.query('Split == "valid"')
+# data_2_test = data_2.query('Split == "test"')
+# X_train, y_train = data_2_train.drop(columns=['Outcome', 'Split']), data_2_train.Outcome
+# X_valid, y_valid = data_2_valid.drop(columns=['Outcome', 'Split']), data_2_valid.Outcome
+# X_test, y_test = data_2_test.drop(columns=['Outcome', 'Split']), data_2_test.Outcome
+# data_2.Split.value_counts()
+
+# X_train = X_train.drop('Birth Month', axis=1)
+# X_test = X_test.drop('Birth Month', axis=1)
+# X_valid = X_valid.drop('Birth Month', axis=1)
+
+# # Fit model (TO TRAIN SET ONLY)
+# model_2 = DecisionTree(target_attribute='Outcome')  # <-- Feel free to add hyperparameters 
+# model_2.fit(X_train, y_train)
+# print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
+# print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
+# print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
+
+# model_2.prune_tree(X_valid, y_valid)
+# print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
+# print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
+# print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
