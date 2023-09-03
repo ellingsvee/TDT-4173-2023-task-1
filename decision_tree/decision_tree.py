@@ -1,13 +1,10 @@
 import numpy as np 
 import pandas as pd 
-# IMPORTANT: DO NOT USE ANY OTHER 3RD PARTY PACKAGES
-# (math, random, collections, functools, etc. are perfectly fine)
-import random
-from icecream import ic # Remove 
 
 class DecisionTree:
     
     def __init__(self, target_attribute = 'Play Tennis'):
+        # Initializing the hyperparameters
         self.tree = None
         self.target_attribute = target_attribute
 
@@ -21,40 +18,66 @@ class DecisionTree:
                 to the features.
             y (pd.Series): a vector of discrete ground-truth labels
         """
-        self.booleans = y.unique().tolist()
-        self.tree = self.build_tree(X, y, X.columns.tolist())
+        self.booleans = y.unique().tolist() # A list containg the names of the boolean-values in the training-data. F.ex. ["Yes", "No"], ["success", "failure"] etc.
+        self.tree = self.build_tree(X, y, X.columns.tolist()) # Building the tree
 
     def build_tree(self, X, y, attributes):
-        root = []
+        """
+        Recursively building a tree based on the training data.
 
+        Args:
+            X (pd.DataFrame): a matrix with discrete value where
+                each row is a sample and the columns correspond
+                to the features.
+            y (pd.Series): a vector of discrete ground-truth labels
+            attributes (np.array): list of the column-names in X
+        """
+        root = [] 
+
+        # Checking if there are only one more unique value in y.
         unique_y_vals = y.unique()
         if len(unique_y_vals) == 1:
             if unique_y_vals[0] in self.booleans:
                 root.append(([], unique_y_vals[0]))
             return root
-
+        # Checking if there are no more columns in X that has been taken into account. If so, returning the most common value in y.
         if len(attributes) == 0:
             most_common = self.most_common_value(y)
             root.append(([], most_common))
             return root
 
-        attr = self.find_best_attribute(X, y, attributes)
-        for val in X[attr].unique().tolist():
+        attr = self.find_best_attribute(X, y, attributes) # Finding the remaining attribute with the highest gain.
+        for val in X[attr].unique().tolist(): # Iterating throught the elements in the column related to the attribute
             condition_mask = X[attr] == val
             if X[condition_mask].empty:
                 leaf_label = self.most_common_value(y)
                 root.append(([(attr, val)], leaf_label))
-            else:
+            else: 
                 new_attributes = np.delete(attributes, np.argwhere(attributes == attr))
-                sub_tree = self.build_tree(X[condition_mask], y[condition_mask], new_attributes)
+                sub_tree = self.build_tree(X[condition_mask], y[condition_mask], new_attributes) # Recursion
                 for sub_case in sub_tree:
                     root.append(([(attr, val)] + sub_case[0], sub_case[1]))
         return root
 
     def most_common_value(self, y):
+        """
+        Finding the most common value in y
+        Args:
+            y (pd.Series): a vector of discrete ground-truth labels
+        """
         return y.value_counts().idxmax() 
 
     def find_best_attribute(self, X, y, attributes):
+        """
+        Finding the best attribute, i.e. the one with the highest gain.
+        
+        Args:
+            X (pd.DataFrame): a matrix with discrete value where
+                each row is a sample and the columns correspond
+                to the features.
+            y (pd.Series): a vector of discrete ground-truth labels
+            attributes (np.array): list of the remaining column-names in X
+        """
         tot_entropy = entropy(y.value_counts())
         gains = {}
         for attribute in attributes:
@@ -62,6 +85,9 @@ class DecisionTree:
         return max(gains, key=lambda k: gains[k])
 
     def gain(self, X, y, attribute, tot_entropy):
+        """
+        Calculating the gain.
+        """
         values = X[attribute].unique()
         return tot_entropy - np.sum([(len(y[X[attribute] == value])/len(y))*entropy(y[X[attribute] == value].value_counts()) for value in values])
 
@@ -85,22 +111,28 @@ class DecisionTree:
         return np.array([self.predict_sample(row.to_dict(), tree) for _, row in X.iterrows()])
 
     def predict_sample(self, sample, tree):
-        # for conditions, label in tree:
-        #     conditions_satisfied = all(sample[attr] == val for attr, val in conditions)
-        #     if conditions_satisfied == True:
-        #         return label
-        # # If no "direct" path was found, remove one of the rules and base the prediction on that
+        """
+        Predicting a sample based on the tree generated during the fitting.
+
+        If there exist a direct path for the sample in the tree, return the corresponding boolean label. It not, find the path in the tree that has most in common with the cample.
+        """
         rules = []
         for conditions, label in tree:
             conditions_satisfied = all(sample[attr] == val for attr, val in conditions)
             if conditions_satisfied == True:
-                return label
-            rules.append([[sample[attr] == val for attr, val in conditions], label, conditions]) # If no perfect fit was found
+                return label # If a perfect fit was found
+            rules.append([[sample[attr] == val for attr, val in conditions], label, conditions])
         
         return self.find_most_similar(rules) # If no perfect fit was found
 
     def find_most_similar(self, rules):
         # If no "direct" path was found, find the other rule that if the most "similar" to the sample we want to predict.
+        """
+        Find the boolean label corresponding to the path in the tree that has the most in common with the sample.
+        For each path in the tree, check how many rules (from the sample) that the path satisfies. Return the boolean label from the path that satisfies the most rules.
+
+        POTENTIAL IMPROVEMENT: Take the "importance" of each of the rules into account, i.e. the gain of the attribute that corresponds to the spesific rule.
+        """
         max_true_count = 0
         best_index = -1
         for i, rule in enumerate(rules):
@@ -132,6 +164,9 @@ class DecisionTree:
         """
         return self.tree
     
+    ############### TWO TREE-PRUNING AGLORITHMS ###############
+    # These are not getting used because it was not neccessary for the dataset I was working with, but can be of importance for other instances.
+
     def prune_tree_rep(self, X_val, y_val):
         best_accuracy = accuracy(y_val, self.predict(X_val, self.tree))
         # pruned_tree = self.tree.copy()
@@ -239,55 +274,3 @@ def entropy(counts):
     probs = counts / counts.sum()
     probs = probs[probs > 0]  # Avoid log(0)
     return - np.sum(probs * np.log2(probs))
-
-
-
-# Testing
-# data_1 = pd.read_csv('decision_tree/data_1.csv')
-# data_1
-
-# Separate independent (X) and dependent (y) variables
-# X = data_1.drop(columns=['Play Tennis'])
-# y = data_1['Play Tennis']
-
-# # Create and fit a Decrision Tree classifier
-# model_1 = DecisionTree('Play Tennis')  # <-- Should work with default constructor
-# model_1.fit(X, y)
-
-# # Verify that it perfectly fits the training set
-# print(f'Accuracy: {accuracy(y_true=y, y_pred=model_1.predict(X)) * 100 :.1f}%')
-
-# for rules, label in model_1.get_rules():
-#     conjunction = ' ∩ '.join(f'{attr}={value}' for attr, value in rules)
-#     print(f'{"✅" if label == "Yes" else "❌"} {conjunction} => {label}')
-
-data_2 = pd.read_csv('decision_tree/data_2.csv')
-
-data_2_train = data_2.query('Split == "train"')
-data_2_valid = data_2.query('Split == "valid"')
-data_2_test = data_2.query('Split == "test"')
-X_train, y_train = data_2_train.drop(columns=['Outcome', 'Split']), data_2_train.Outcome
-X_valid, y_valid = data_2_valid.drop(columns=['Outcome', 'Split']), data_2_valid.Outcome
-X_test, y_test = data_2_test.drop(columns=['Outcome', 'Split']), data_2_test.Outcome
-data_2.Split.value_counts()
-
-X_train = X_train.drop('Birth Month', axis=1)
-X_test = X_test.drop('Birth Month', axis=1)
-X_valid = X_valid.drop('Birth Month', axis=1)
-
-# Fit model (TO TRAIN SET ONLY)
-model_2 = DecisionTree(target_attribute='Outcome')  # <-- Feel free to add hyperparameters 
-model_2.fit(X_train, y_train)
-print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
-print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
-print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
-
-# alphas = [0.001, 0.01, 0.1, 1.0, 10.0]
-# alpha = model_2.tune_alpha(X_valid, y_valid, alphas) # Tunes the alpha
-# model_2.prune_tree_ccp(X_valid, y_valid, alpha, print_end=True)
-# # model_2.prune_tree_rep(X_valid, y_valid)
-
-
-# print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
-# print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
-# print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
