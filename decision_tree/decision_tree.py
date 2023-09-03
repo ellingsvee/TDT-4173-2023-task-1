@@ -5,117 +5,6 @@ import pandas as pd
 import random
 from icecream import ic # Remove 
 
-# class DecisionTree:
-    
-#     def __init__():
-#         # NOTE: Feel free add any hyperparameters 
-#         # (with defaults) as you see fit
-#         pass
-    
-#     def fit(self, X, y):
-#         """
-#         Generates a decision tree for classification
-        
-#         Args:
-#             X (pd.DataFrame): a matrix with discrete value where
-#                 each row is a sample and the columns correspond
-#                 to the features.
-#             y (pd.Series): a vector of discrete ground-truth labels
-#         """
-#         # TODO: Implement 
-#         raise NotImplementedError()
-    
-#     def predict(self, X):
-#         """
-#         Generates predictions
-        
-#         Note: should be called after .fit()
-        
-#         Args:
-#             X (pd.DataFrame): an mxn discrete matrix where
-#                 each row is a sample and the columns correspond
-#                 to the features.
-            
-#         Returns:
-#             A length m vector with predictions
-#         """
-#         # TODO: Implement 
-#         raise NotImplementedError()
-    
-#     def get_rules(self):
-#         """
-#         Returns the decision tree as a list of rules
-        
-#         Each rule is given as an implication "x => y" where
-#         the antecedent is given by a conjuction of attribute
-#         values and the consequent is the predicted label
-        
-#             attr1=val1 ^ attr2=val2 ^ ... => label
-        
-#         Example output:
-#         >>> model.get_rules()
-#         [
-#             ([('Outlook', 'Overcast')], 'Yes'),
-#             ([('Outlook', 'Rain'), ('Wind', 'Strong')], 'No'),
-#             ...
-#         ]
-#         """
-#         # TODO: Implement
-#         raise NotImplementedError()
-
-
-# # --- Some utility functions 
-    
-# def accuracy(y_true, y_pred):
-#     """
-#     Computes discrete classification accuracy
-    
-#     Args:
-#         y_true (array<m>): a length m vector of ground truth labels
-#         y_pred (array<m>): a length m vector of predicted labels
-        
-#     Returns:
-#         The average number of correct predictions
-#     """
-#     assert y_true.shape == y_pred.shape
-#     return (y_true == y_pred).mean()
-
-
-# def entropy(counts):
-#     """
-#     Computes the entropy of a partitioning
-    
-#     Args:
-#         counts (array<k>): a lenth k int array >= 0. For instance,
-#             an array [3, 4, 1] implies that you have a total of 8
-#             datapoints where 3 are in the first group, 4 in the second,
-#             and 1 one in the last. This will result in entropy > 0.
-#             In contrast, a perfect partitioning like [8, 0, 0] will
-#             result in a (minimal) entropy of 0.0
-            
-#     Returns:
-#         A positive float scalar corresponding to the (log2) entropy
-#         of the partitioning.
-    
-#     """
-#     assert (counts >= 0).all()
-#     probs = counts / counts.sum()
-#     probs = probs[probs > 0]  # Avoid log(0)
-#     return - np.sum(probs * np.log2(probs))
-
-
-
-
-
-# class TreeNode:
-#     def __init__(self, value):
-#         self.value = value
-#         self.children = []
-
-#     def add_child(self, child_node):
-#         self.children.append(child_node)
-
-
 class DecisionTree:
     
     def __init__(self, target_attribute = 'Play Tennis'):
@@ -201,16 +90,14 @@ class DecisionTree:
         #     if conditions_satisfied == True:
         #         return label
         # # If no "direct" path was found, remove one of the rules and base the prediction on that
-        
         rules = []
         for conditions, label in tree:
             conditions_satisfied = all(sample[attr] == val for attr, val in conditions)
             if conditions_satisfied == True:
                 return label
-            
             rules.append([[sample[attr] == val for attr, val in conditions], label, conditions]) # If no perfect fit was found
         
-        return self.find_most_similar(rules) # If no perfect fit was founc
+        return self.find_most_similar(rules) # If no perfect fit was found
 
     def find_most_similar(self, rules):
         # If no "direct" path was found, find the other rule that if the most "similar" to the sample we want to predict.
@@ -245,29 +132,74 @@ class DecisionTree:
         """
         return self.tree
     
-    def prune_tree(self, X, y):
-        """
-        Prunes the decision tree using the MDL criterion
-        
-        Args:
-            X (pd.DataFrame): Validation dataset features
-            y (pd.Series): Validation dataset labels
-        """
-        best_accuracy = accuracy(y, self.predict(X, self.tree))
-        pruned_tree = self.tree
-
-        for i, (conditions, label) in enumerate(self.tree):
+    def prune_tree_rep(self, X_val, y_val):
+        best_accuracy = accuracy(y_val, self.predict(X_val, self.tree))
+        # pruned_tree = self.tree.copy()
+        original_tree_len = len(self.tree)
+        for i, (conditions, _) in enumerate(self.tree):
             if conditions:
-                # Temporarily remove the subtree rooted at this node
-                pruned_subtree = pruned_tree[:i] + pruned_tree[i+1:]
-                accuracy_without_subtree = accuracy(y, self.predict(X, pruned_subtree))
+                pruned_subtree = self.tree[:i] + self.tree[i+1:]
+                accuracy_without_subtree = accuracy(y_val, self.predict(X_val, pruned_subtree))
 
                 if accuracy_without_subtree > best_accuracy:
                     best_accuracy = accuracy_without_subtree
-                    pruned_tree = pruned_subtree
-        
-        print(f"Performed tree pruning: {len(self.tree) - len(pruned_tree)} rule(s) removed.")
+                    self.tree = pruned_subtree
+        print(f"Performed tree pruning: {len(self.tree) - original_tree_len} rule(s) removed.")
+
+    def prune_tree_ccp(self, X_val, y_val, alpha, print_end=False):
+        original_tree_len = len(self.tree)
+        node_costs = self.calculate_node_costs(self.tree, X_val, y_val, alpha)
+        pruned_tree = self.tree.copy()
+
+        for i, (conditions, _) in enumerate(self.tree):
+            if conditions:
+                if node_costs[i] > 0:  # Prune if the node cost is positive
+                    pruned_subtree = self.tree[:i] + self.tree[i+1:]
+                    accuracy_without_subtree = accuracy(y_val, self.predict(X_val, pruned_subtree))
+
+                    if accuracy_without_subtree >= accuracy(y_val, self.predict(X_val, pruned_tree)):
+                        pruned_tree = pruned_subtree
+        if print_end == True:
+            print(f"Performed CCP pruning: {original_tree_len - len(pruned_tree)} rule(s) removed.")
         self.tree = pruned_tree
+
+    def calculate_node_costs(self, tree, X_val, y_val, alpha):
+        node_costs = []
+        for conditions, _ in tree:
+            if conditions:
+                pruned_subtree = [node for node in tree if node != (conditions, _)]
+                accuracy_without_node = accuracy(y_val, self.predict(X_val, pruned_subtree))
+                misclass_count = len(y_val) - int(len(y_val) * accuracy_without_node)
+                node_cost = misclass_count + alpha * len(pruned_subtree)
+                node_costs.append(node_cost)
+            else:
+                node_costs.append(0)
+        return node_costs
+    
+    def tune_alpha(self, X_val, y_val, alphas):
+        best_accuracy = 0
+        best_alpha = None
+
+        for alpha in alphas:
+            # Create a copy of the tree to prevent modifying the original tree
+            tree_copy = self.tree.copy()
+
+            # Prune the tree using the current alpha value
+            self.prune_tree_ccp(X_val, y_val, alpha)
+
+            # Calculate accuracy on the validation set
+            accuracy_val = accuracy(y_val, self.predict(X_val, self.tree))
+
+            # Update the best accuracy and alpha if needed
+            if accuracy_val > best_accuracy:
+                best_accuracy = accuracy_val
+                best_alpha = alpha
+
+            # Reset the tree to the original state
+            self.tree = tree_copy
+
+        print(f"Best alpha: {best_alpha}, Best accuracy: {best_accuracy}")
+        return best_alpha
 
 # --- Some utility functions 
     
@@ -329,28 +261,33 @@ def entropy(counts):
 #     conjunction = ' ∩ '.join(f'{attr}={value}' for attr, value in rules)
 #     print(f'{"✅" if label == "Yes" else "❌"} {conjunction} => {label}')
 
-# data_2 = pd.read_csv('decision_tree/data_2.csv')
+data_2 = pd.read_csv('decision_tree/data_2.csv')
 
-# data_2_train = data_2.query('Split == "train"')
-# data_2_valid = data_2.query('Split == "valid"')
-# data_2_test = data_2.query('Split == "test"')
-# X_train, y_train = data_2_train.drop(columns=['Outcome', 'Split']), data_2_train.Outcome
-# X_valid, y_valid = data_2_valid.drop(columns=['Outcome', 'Split']), data_2_valid.Outcome
-# X_test, y_test = data_2_test.drop(columns=['Outcome', 'Split']), data_2_test.Outcome
-# data_2.Split.value_counts()
+data_2_train = data_2.query('Split == "train"')
+data_2_valid = data_2.query('Split == "valid"')
+data_2_test = data_2.query('Split == "test"')
+X_train, y_train = data_2_train.drop(columns=['Outcome', 'Split']), data_2_train.Outcome
+X_valid, y_valid = data_2_valid.drop(columns=['Outcome', 'Split']), data_2_valid.Outcome
+X_test, y_test = data_2_test.drop(columns=['Outcome', 'Split']), data_2_test.Outcome
+data_2.Split.value_counts()
 
-# X_train = X_train.drop('Birth Month', axis=1)
-# X_test = X_test.drop('Birth Month', axis=1)
-# X_valid = X_valid.drop('Birth Month', axis=1)
+X_train = X_train.drop('Birth Month', axis=1)
+X_test = X_test.drop('Birth Month', axis=1)
+X_valid = X_valid.drop('Birth Month', axis=1)
 
-# # Fit model (TO TRAIN SET ONLY)
-# model_2 = DecisionTree(target_attribute='Outcome')  # <-- Feel free to add hyperparameters 
-# model_2.fit(X_train, y_train)
-# print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
-# print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
-# print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
+# Fit model (TO TRAIN SET ONLY)
+model_2 = DecisionTree(target_attribute='Outcome')  # <-- Feel free to add hyperparameters 
+model_2.fit(X_train, y_train)
+print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
+print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
+print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
 
-# model_2.prune_tree(X_valid, y_valid)
+# alphas = [0.001, 0.01, 0.1, 1.0, 10.0]
+# alpha = model_2.tune_alpha(X_valid, y_valid, alphas) # Tunes the alpha
+# model_2.prune_tree_ccp(X_valid, y_valid, alpha, print_end=True)
+# # model_2.prune_tree_rep(X_valid, y_valid)
+
+
 # print(f'Train: {accuracy(y_train, model_2.predict(X_train)) * 100 :.1f}%')
 # print(f'Valid: {accuracy(y_valid, model_2.predict(X_valid)) * 100 :.1f}%')
 # print(f'Test: {accuracy(y_test, model_2.predict(X_test)) * 100 :.1f}%')
