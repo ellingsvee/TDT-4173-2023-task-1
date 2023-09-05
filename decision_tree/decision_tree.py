@@ -1,12 +1,15 @@
 import numpy as np 
 import pandas as pd 
+import random
 
 class DecisionTree:
-    
-    def __init__(self, target_attribute = 'Play Tennis'):
+    def __init__(self, target_attribute = 'Play Tennis', predict_mtd = "most_similar_branch", alphas = [0.001, 0.01, 0.1, 1.0, 10.0]):
         # Initializing the hyperparameters
         self.tree = None
         self.target_attribute = target_attribute
+        self.alphas = alphas
+        self.predict_mtd = predict_mtd
+        self.tree_hierachy = []
 
     def fit(self, X, y):
         """
@@ -18,6 +21,7 @@ class DecisionTree:
                 to the features.
             y (pd.Series): a vector of discrete ground-truth labels
         """
+        self.number_of_columns = X.shape[1]
         self.booleans = y.unique().tolist() # A list containg the names of the boolean-values in the training-data. F.ex. ["Yes", "No"], ["success", "failure"] etc.
         self.tree = self.build_tree(X, y, X.columns.tolist()) # Building the tree
 
@@ -47,6 +51,9 @@ class DecisionTree:
             return root
 
         attr = self.find_best_attribute(X, y, attributes) # Finding the remaining attribute with the highest gain.
+        if len(self.tree_hierachy) < self.number_of_columns:
+            self.tree_hierachy.append(attr)
+
         for val in X[attr].unique().tolist(): # Iterating throught the elements in the column related to the attribute
             condition_mask = X[attr] == val
             if X[condition_mask].empty:
@@ -114,7 +121,7 @@ class DecisionTree:
         """
         Predicting a sample based on the tree generated during the fitting.
 
-        If there exist a direct path for the sample in the tree, return the corresponding boolean label. It not, find the path in the tree that has most in common with the cample.
+        If there exist a direct path, one can whoose two different method of obtaining a label. Eiter use the find_most_similar- or the move_back_in_tree-function.
         """
         rules = []
         for conditions, label in tree:
@@ -123,7 +130,35 @@ class DecisionTree:
                 return label # If a perfect fit was found
             rules.append([[sample[attr] == val for attr, val in conditions], label, conditions])
         
-        return self.find_most_similar(rules) # If no perfect fit was found
+        
+        if self.predict_mtd == "most_similar_branch":
+            return self.find_most_similar(rules) # If no perfect fit was found
+        elif self.predict_mtd == "move_back_in_tree":
+            return self.move_back_in_tree(sample, tree)
+        else:
+            return random.choice(self.booleans)
+    
+    def move_back_in_tree(self, sample, tree):
+        """
+        Move to an earlier node in the tree, and return the label that is the most common among the branches stemming from this node. Performs recursion if there are no such branches by moving furter up.
+        """
+        for element in reversed(self.tree_hierachy):
+            if element in sample:
+                del sample[element]
+                break
+        potential_labels = []
+        sample_len = len(sample)
+        for conditions, label in tree:
+            temp_conditions_satisfied = 0
+            for attr, val in conditions:
+                if attr in sample and sample[attr] == val:
+                    temp_conditions_satisfied += 1
+            if temp_conditions_satisfied == sample_len:
+                potential_labels.append(label)
+
+        if not potential_labels:
+            return self.move_back_in_tree(sample, tree)
+        return pd.Series(potential_labels).value_counts().idxmax()
 
     def find_most_similar(self, rules):
         # If no "direct" path was found, find the other rule that if the most "similar" to the sample we want to predict.
@@ -138,7 +173,6 @@ class DecisionTree:
         for i, rule in enumerate(rules):
             lst = rule[0]
             true_count = lst.count(True)
-
             if true_count > max_true_count:
                 max_true_count = true_count
                 best_index = i
@@ -211,11 +245,11 @@ class DecisionTree:
                 node_costs.append(0)
         return node_costs
     
-    def tune_alpha(self, X_val, y_val, alphas):
+    def tune_alpha(self, X_val, y_val):
         best_accuracy = 0
         best_alpha = None
 
-        for alpha in alphas:
+        for alpha in self.alphas:
             # Create a copy of the tree to prevent modifying the original tree
             tree_copy = self.tree.copy()
 
